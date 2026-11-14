@@ -166,7 +166,7 @@ if flame_sound then
 
 	-- Parameters
 	local radius = 8 -- Flame node search radius around player
-	local cycle = 3 -- Cycle time for sound updates
+	local cycle = 1 -- Cycle time for sound updates
 
 	-- Update sound for player
 	function fire.update_player_sound(player)
@@ -175,52 +175,41 @@ if flame_sound then
 		local ppos = player:get_pos()
 		local areamin = vector.subtract(ppos, radius)
 		local areamax = vector.add(ppos, radius)
-		local fpos, num = minetest.find_nodes_in_area(
+		local fpos = minetest.find_nodes_in_area(
 			areamin,
 			areamax,
 			{"fire:basic_flame", "fire:permanent_flame"}
 		)
-		-- Total number of flames in radius
-		local flames = (num["fire:basic_flame"] or 0) +
-			(num["fire:permanent_flame"] or 0)
-		-- Stop previous sound
-		if handles[player_name] then
-			minetest.sound_stop(handles[player_name])
-			handles[player_name] = nil
+		-- Discard flames outside the spherical radius
+		for i = #fpos, 1, -1 do
+			if vector.distance(ppos, fpos[i]) > radius then
+				table.remove(fpos, i)
+			end
 		end
-		-- If flames
-		if flames > 0 then
+		-- Total number of flames in radius
+		local flames = #fpos
+		if handles[player_name] then
+			-- Fade out the running sound when no flames remain
+			if flames == 0 then
+				minetest.sound_fade(handles[player_name], -0.5, 0.0)
+				handles[player_name] = nil
+			end
+		elseif flames > 0 then
 			-- Find centre of flame positions
-			local fposmid = fpos[1]
-			-- If more than 1 flame
-			if #fpos > 1 then
-				local fposmin = areamax
-				local fposmax = areamin
+			local fposmid
+			if #fpos == 1 then
+				fposmid = fpos[1]
+			else
+				local fposmin = vector.copy(areamax)
+				local fposmax = vector.copy(areamin)
 				for i = 1, #fpos do
-					local fposi = fpos[i]
-					if fposi.x > fposmax.x then
-						fposmax.x = fposi.x
-					end
-					if fposi.y > fposmax.y then
-						fposmax.y = fposi.y
-					end
-					if fposi.z > fposmax.z then
-						fposmax.z = fposi.z
-					end
-					if fposi.x < fposmin.x then
-						fposmin.x = fposi.x
-					end
-					if fposi.y < fposmin.y then
-						fposmin.y = fposi.y
-					end
-					if fposi.z < fposmin.z then
-						fposmin.z = fposi.z
-					end
+					fposmin = vector.combine(fposmin, fpos[i], math.min)
+					fposmax = vector.combine(fposmax, fpos[i], math.max)
 				end
 				fposmid = vector.divide(vector.add(fposmin, fposmax), 2)
 			end
 			-- Play sound
-			local handle = minetest.sound_play("fire_fire", {
+			local handle = minetest.sound_play({name = "fire_fire", fade = 0.5}, {
 				pos = fposmid,
 				to_player = player_name,
 				gain = math.min(0.06 * (1 + flames * 0.125), 0.18),
@@ -257,10 +246,6 @@ if flame_sound then
 		end
 	end)
 end
-
-
--- Deprecated function kept temporarily to avoid crashes if mod fire nodes call it
-function fire.update_sounds_around() end
 
 --
 -- ABMs
